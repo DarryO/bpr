@@ -45,12 +45,12 @@ class BPR(object):
         """
         self.init(data)
 
-        print 'initial loss = {0}'.format(self.loss())
-        for it in xrange(num_iters):
-            print 'starting iteration {0}'.format(it)
+        print('initial loss = {0}'.format(self.loss()))
+        for it in range(num_iters):
+            print('starting iteration {0}'.format(it))
             for u,i,j in sampler.generate_samples(self.data):
                 self.update_factors(u,i,j)
-            print 'iteration {0}: loss = {1}'.format(it,self.loss())
+            print('iteration {0}: loss = {1}'.format(it,self.loss()))
 
     def init(self,data):
         self.data = data
@@ -66,7 +66,7 @@ class BPR(object):
         # apply rule of thumb to decide num samples over which to compute loss
         num_loss_samples = int(100*self.num_users**0.5)
 
-        print 'sampling {0} <user,item i,item j> triples...'.format(num_loss_samples)
+        print('sampling {0} <user,item i,item j> triples...'.format(num_loss_samples))
         sampler = UniformUserUniformItem(True)
         self.loss_samples = [t for t in sampler.generate_samples(data,num_loss_samples)]
 
@@ -137,8 +137,11 @@ class Sampler(object):
 
     def sample_negative_item(self,user_items):
         j = self.random_item()
-        while j in user_items:
-            j = self.random_item()
+        while True:
+            if j in user_items:
+                j = self.random_item()
+            else:
+                break
         return j
 
     def uniform_user(self):
@@ -165,7 +168,7 @@ class UniformUserUniformItem(Sampler):
 
     def generate_samples(self,data,max_samples=None):
         self.init(data,max_samples)
-        for _ in xrange(self.num_samples(self.data.nnz)):
+        for _ in range(self.num_samples(self.data.nnz)):
             u = self.uniform_user()
             # sample positive item
             i = random.choice(self.data[u].indices)
@@ -178,7 +181,7 @@ class UniformUserUniformItemWithoutReplacement(Sampler):
         self.init(self,data,max_samples)
         # make a local copy of data as we're going to "forget" some entries
         self.local_data = self.data.copy()
-        for _ in xrange(self.num_samples(self.data.nnz)):
+        for _ in range(self.num_samples(self.data.nnz)):
             u = self.uniform_user()
             # sample positive item without replacement if we can
             user_items = self.local_data[u].nonzero()[1]
@@ -197,7 +200,7 @@ class UniformPair(Sampler):
 
     def generate_samples(self,data,max_samples=None):
         self.init(data,max_samples)
-        for _ in xrange(self.num_samples(self.data.nnz)):
+        for _ in range(self.num_samples(self.data.nnz)):
             idx = random.randint(0,self.data.nnz-1)
             u = self.users[self.idx]
             i = self.items[self.idx]
@@ -208,16 +211,17 @@ class UniformPairWithoutReplacement(Sampler):
 
     def generate_samples(self,data,max_samples=None):
         self.init(data,max_samples)
-        idxs = range(self.data.nnz)
+        idxs = list(range(self.data.nnz))
         random.shuffle(idxs)
         self.users,self.items = self.data.nonzero()
         self.users = self.users[idxs]
         self.items = self.items[idxs]
         self.idx = 0
-        for _ in xrange(self.num_samples(self.data.nnz)):
+
+        for _ in range(self.num_samples(self.data.nnz)):
             u = self.users[self.idx]
             i = self.items[self.idx]
-            j = self.sample_negative_item(self.data[u])
+            j = self.sample_negative_item(self.data[u].indices)
             self.idx += 1
             yield u,i,j
 
@@ -242,16 +246,26 @@ if __name__ == '__main__':
 
     import sys
     from scipy.io import mmread
+    from numpy import array
+    from scipy.sparse import coo_matrix
+    row  = array([0, 0, 1, 3, 1, 2, 0])
+    col  = array([0, 2, 1, 3, 1, 0, 0])
+    value = array([1, 1, 1, 1, 1, 1, 1])
+    data = coo_matrix((value, (row, col)), shape=(4, 4)).tocsr()
 
-    data = mmread(sys.argv[1]).tocsr()
+    # data = mmread(sys.argv[1]).tocsr()
 
     args = BPRArgs()
     args.learning_rate = 0.3
 
-    num_factors = 10
+    num_factors = 2
     model = BPR(num_factors,args)
 
     sample_negative_items_empirically = True
     sampler = UniformPairWithoutReplacement(sample_negative_items_empirically)
-    num_iters = 10
+    num_iters = 3
     model.train(data,sampler,num_iters)
+    print(model.predict(0, 1))
+    print(model.predict(0, 2))
+    print(model.predict(0, 3))
+    print(model.predict(0, 1))
